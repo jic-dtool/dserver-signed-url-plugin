@@ -36,14 +36,17 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    # dservercore and dtool-s3 are installed from git: the signing API this
-    # plugin uses is not in a dtool-s3 release yet, and the released
-    # dservercore resolves to a flask-smorest that does not work with the
-    # Flask it gets alongside (ImportError: MethodViewType).
+    # dtoolcore, dservercore and dtool-s3 are installed from git: the
+    # released dtoolcore lacks ProtoDataSet.freeze_with_manifest (used by
+    # upload-complete), the signing API this plugin uses is not in a dtool-s3
+    # release yet, and the released dservercore resolves to a flask-smorest
+    # that does not work with the Flask it gets alongside
+    # (ImportError: MethodViewType).
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install \
+          "dtoolcore @ git+https://github.com/jic-dtool/dtoolcore.git@master" \
           "dservercore @ git+https://github.com/jic-dtool/dservercore.git@main" \
           "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@master" \
           "dserver-search-plugin-mongo @ git+https://github.com/jic-dtool/dserver-search-plugin-mongo.git@main" \
@@ -111,10 +114,12 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+    # Same dependencies from git as in the test job, see there.
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install \
+          "dtoolcore @ git+https://github.com/jic-dtool/dtoolcore.git@master" \
           "dservercore @ git+https://github.com/jic-dtool/dservercore.git@main" \
           "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@master" \
           "dserver-search-plugin-mongo @ git+https://github.com/jic-dtool/dserver-search-plugin-mongo.git@main" \
