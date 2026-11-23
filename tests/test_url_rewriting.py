@@ -40,7 +40,7 @@ class TestRewriteUrl:
 
     def test_simple_host_rewrite(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         url = "http://minio:9000/bucket/file?X-Amz-Signature=abc123"
         result = _rewrite_url(url)
         assert "localhost:9000" in result
@@ -48,14 +48,22 @@ class TestRewriteUrl:
 
     def test_non_matching_url_unchanged(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         url = "http://other-host:9000/bucket/file"
         result = _rewrite_url(url)
         assert result == url
 
-    def test_rewrite_preserves_path_and_query(self):
+    def test_colon_separated_format_is_rejected(self):
+        """The former "internal:external" format is ambiguous, as URLs
+        contain colons themselves; it is not applied."""
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
             "http://minio:9000:http://localhost:9000"
+        url = "http://minio:9000/bucket/file"
+        assert _rewrite_url(url) == url
+
+    def test_rewrite_preserves_path_and_query(self):
+        plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
+            "http://minio:9000|http://localhost:9000"
         url = "http://minio:9000/bucket/path/to/file?param=value&other=123"
         result = _rewrite_url(url)
         assert "/bucket/path/to/file" in result
@@ -65,7 +73,7 @@ class TestRewriteUrl:
 class TestRewriteUrlsDict:
     def test_rewrites_url_string_values(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         d = {"readme": "http://minio:9000/bucket/readme.yml"}
         result = _rewrite_urls_dict(d)
         assert "localhost:9000" in result["readme"]
@@ -73,21 +81,21 @@ class TestRewriteUrlsDict:
 
     def test_leaves_non_url_strings_unchanged(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         d = {"name": "my-dataset", "uuid": "abc-123"}
         result = _rewrite_urls_dict(d)
         assert result == d
 
     def test_handles_nested_dicts(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         d = {"items": {"id1": {"url": "http://minio:9000/data/id1"}}}
         result = _rewrite_urls_dict(d)
         assert "localhost:9000" in result["items"]["id1"]["url"]
 
     def test_handles_list_of_urls(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         d = {"urls": ["http://minio:9000/a", "http://minio:9000/b"]}
         result = _rewrite_urls_dict(d)
         for url in result["urls"]:
@@ -95,7 +103,7 @@ class TestRewriteUrlsDict:
 
     def test_handles_mixed_list(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         d = {"items": ["http://minio:9000/a", "not-a-url", 42]}
         result = _rewrite_urls_dict(d)
         assert "localhost:9000" in result["items"][0]
@@ -104,7 +112,7 @@ class TestRewriteUrlsDict:
 
     def test_returns_new_dict_not_mutating(self):
         plugin_config.Config.SIGNED_URL_HOST_REWRITE = \
-            "http://minio:9000:http://localhost:9000"
+            "http://minio:9000|http://localhost:9000"
         original = {"url": "http://minio:9000/file"}
         result = _rewrite_urls_dict(original)
         # original should be unchanged
