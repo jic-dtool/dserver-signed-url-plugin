@@ -65,6 +65,7 @@ Added
 Dependencies
 ~~~~~~~~~~~~
 
+- Requires Python 3.10 or later
 - Requires ``dtoolcore>=3.18.0`` with ``freeze_with_manifest`` support
 - Requires ``dservercore>0.18.0``
 - Requires ``dtool-s3`` for S3/MinIO backends
