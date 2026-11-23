@@ -1,6 +1,6 @@
 [build-system]
-requires = ["flit_scm"]
-build-backend = "flit_scm:buildapi"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "dserver-signed-url-plugin"
@@ -11,9 +11,9 @@ authors = [
     {name = "Lars Pastewka", email = "lars.pastewka@imtek.uni-freiburg.de"},
 ]
 dynamic = ["version"]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
-    "dtoolcore>=3.18.0",
+    "dtoolcore>=3.20.0",
     "dtool-s3",
     "dservercore>0.18.0",
     "flask-smorest",
@@ -36,13 +36,18 @@ Repository = "https://github.com/jic-dtool/dserver-signed-url-plugin"
 [project.entry-points."dservercore.extension"]
 SignedURLExtension = "dserver_signed_url_plugin:SignedURLExtension"
 
-[tool.flit.module]
-name = "dserver_signed_url_plugin"
+[tool.hatch.version]
+source = "vcs"
+raw-options = { version_scheme = "guess-next-dev", local_scheme = "no-local-version" }
 
-[tool.setuptools_scm]
-version_scheme = "guess-next-dev"
-local_scheme = "no-local-version"
-write_to = "dserver_signed_url_plugin/version.py"
+[tool.hatch.build.hooks.vcs]
+version-file = "dserver_signed_url_plugin/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dserver_signed_url_plugin"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [".github", ".pre-commit-config.yaml", "CLAUDE.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

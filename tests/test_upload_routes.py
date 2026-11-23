@@ -280,3 +280,53 @@ class TestUploadComplete:
         # Registered in dserver and pending row removed.
         assert len(complete_env["registered"]) == 1
         assert PendingUpload.query.filter_by(uuid=UUID).count() == 0
+
+    def _frozen_meanwhile(self):
+        """Fake freeze that fails because another request froze first."""
+        def freeze(manifest, frozen_at=None):
+            raise dtoolcore.DtoolCoreFrozenDataSetError(
+                f"{DATASET_URI} has already been frozen")
+        return freeze
+
+    def test_frozen_by_concurrent_request_registers(
+            self, client, grumpy_token, complete_env):
+        """A concurrent upload-complete may freeze the dataset between this
+        request loading the proto dataset and freezing it. That is not an
+        error: proceed with registration, as when loading finds a frozen
+        dataset."""
+        complete_env["proto"].freeze_with_manifest = self._frozen_meanwhile()
+        self.add_pending()
+        response = client.post(
+            self.ROUTE, json={"uri": DATASET_URI},
+            headers=auth_header(grumpy_token))
+        assert response.status_code == 200
+        assert response.get_json()["status"] == "registered"
+        assert len(complete_env["registered"]) == 1
+        assert PendingUpload.query.filter_by(uuid=UUID).count() == 0
+
+    @pytest.mark.filterwarnings("error::sqlalchemy.exc.SAWarning")
+    def test_pending_upload_already_removed_by_concurrent_request(
+            self, client, grumpy_token, complete_env):
+        """The concurrent request may also have finished, removing the
+        pending upload record, before this request cleans it up. That must
+        not trip over the missing row ("expected to delete 1 row(s); 0 were
+        matched")."""
+        from dservercore import sql_db
+
+        frozen_meanwhile = self._frozen_meanwhile()
+
+        def freeze(manifest, frozen_at=None):
+            # The other request completes: its own session deletes the row.
+            with sql_db.engine.begin() as connection:
+                connection.execute(
+                    PendingUpload.__table__.delete().where(
+                        PendingUpload.__table__.c.uuid == UUID))
+            frozen_meanwhile(manifest, frozen_at)
+
+        complete_env["proto"].freeze_with_manifest = freeze
+        self.add_pending()
+        response = client.post(
+            self.ROUTE, json={"uri": DATASET_URI},
+            headers=auth_header(grumpy_token))
+        assert response.status_code == 200
+        assert PendingUpload.query.filter_by(uuid=UUID).count() == 0

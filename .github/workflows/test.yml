@@ -38,7 +38,8 @@ jobs:
     # dservercore and dtool-s3 are installed from git: the signing API this
     # plugin uses is not in a dtool-s3 release yet, and the released
     # dservercore resolves to a flask-smorest that does not work with the
-    # Flask it gets alongside (ImportError: MethodViewType).
+    # Flask it gets alongside (ImportError: MethodViewType). dtoolcore comes
+    # from PyPI (>=3.20.0, see pyproject.toml).
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -56,3 +57,105 @@ jobs:
 
     - name: Test
       run: pytest -v -rfEs
+
+  # End-to-end tests against a real S3 server (tests/test_s3_integration.py):
+  # signed upload URLs, upload-complete with dtool-s3, registration in
+  # dserver and signed read URLs.
+  test-s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.14']
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    env:
+      DSERVER_S3_INTEGRATION_TESTS: '1'
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: secret12
+      AWS_DEFAULT_REGION: us-east-1
+      # Points boto3's default configuration (used by dtool-s3) at SeaweedFS.
+      AWS_ENDPOINT_URL: http://localhost:9000
+      # Bucket of the test base URI s3://snow-white (tests/conftest.py).
+      S3_BUCKET: snow-white
+
+    steps:
+    # SeaweedFS is started first so that it boots while the dependencies
+    # are installed. The S3 gateway creates an admin identity from
+    # AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY. The image is pinned so that a
+    # CI failure means our code changed, not that SeaweedFS released a new
+    # version.
+    - name: Start SeaweedFS
+      run: |
+        docker run -d \
+          --name seaweedfs \
+          -p 9000:9000 \
+          -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+          -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+          chrislusf/seaweedfs:4.41 \
+          server -filer -s3 -s3.port=9000
+
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    # Same dependencies from git as in the test job, see there.
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install \
+          "dservercore @ git+https://github.com/jic-dtool/dservercore.git@main" \
+          "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@master" \
+          "dserver-search-plugin-mongo @ git+https://github.com/jic-dtool/dserver-search-plugin-mongo.git@main" \
+          "dserver-retrieve-plugin-mongo @ git+https://github.com/jic-dtool/dserver-retrieve-plugin-mongo.git@main"
+        pip install -e ".[test]"
+        pip list
+
+    - name: Create bucket
+      run: |
+        python - <<'PYEOF'
+        import os
+        import time
+
+        import boto3
+
+        s3 = boto3.client("s3")
+        bucket = os.environ["S3_BUCKET"]
+        already_exists = (
+            s3.exceptions.BucketAlreadyOwnedByYou,
+            s3.exceptions.BucketAlreadyExists,
+        )
+        error = None
+        for attempt in range(30):
+            try:
+                s3.create_bucket(Bucket=bucket)
+                break
+            except already_exists:
+                break
+            except Exception as exc:
+                error = exc
+                print(f"Attempt {attempt + 1}: SeaweedFS not ready yet, waiting...")
+                time.sleep(2)
+        else:
+            raise SystemExit(f"SeaweedFS did not become ready: {error}")
+        print(f"Bucket '{bucket}' is ready.")
+        PYEOF
+
+    - name: Test against S3
+      run: pytest -v -rfEs tests/test_s3_integration.py
+
+    - name: SeaweedFS logs
+      if: failure()
+      run: docker logs seaweedfs 2>&1 | tail -100

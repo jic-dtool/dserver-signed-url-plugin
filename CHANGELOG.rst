@@ -10,6 +10,16 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 Unreleased
 ----------
 
+Changed
+~~~~~~~
+
+- Requires ``dtoolcore>=3.20.0`` (previously ``>=3.18.0``), the first release
+  with ``ProtoDataSet.freeze_with_manifest``, which upload-complete uses
+- Upload initiation and upload completion now return ``502 Bad Gateway``
+  with an explanatory message when the storage backend rejects a
+  server-side write (e.g. ``AccessDenied`` because the server's storage
+  credentials lack write permission), instead of a generic ``500``
+
 
 v0.1.0 (2025-12-08)
 -------------------
@@ -32,6 +42,11 @@ Added
   - Creates proto-dataset (``type: protodataset``) on upload initiation
   - Freezes to dataset (``type: dataset``) on upload completion
   - Validates README and all manifest items exist before freezing
+  - Concurrent ``upload-complete`` requests for the same dataset: if
+    another request freezes the dataset after this one loaded it
+    (dtoolcore raises ``DtoolCoreFrozenDataSetError``), the dataset is
+    treated as already frozen and registered. Removing the pending
+    upload record tolerates the concurrent request having removed it
 
 - Database persistence for pending uploads:
 
@@ -54,11 +69,16 @@ Added
 - Support for S3-compatible storage (via dtool-s3)
 - Support for Azure Blob Storage (via dtool-azure)
 - Comprehensive API documentation in README.rst
+- End-to-end tests against a real S3 server (SeaweedFS in CI): signed
+  upload URLs, upload-complete with dtool-s3, registration in dserver and
+  signed read URLs. Run with ``DSERVER_S3_INTEGRATION_TESTS=1``
 
 Dependencies
 ~~~~~~~~~~~~
 
+- Requires Python 3.10 or later
 - Requires ``dtoolcore>=3.18.0`` with ``freeze_with_manifest`` support
 - Requires ``dservercore>0.18.0``
 - Requires ``dtool-s3`` for S3/MinIO backends
 - Optional ``dtool-azure`` for Azure backends
+- Built with ``hatchling`` and ``hatch-vcs``; the version is derived from git tags
