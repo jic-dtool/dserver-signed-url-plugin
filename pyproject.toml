@@ -14,7 +14,7 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
     "dtoolcore>=3.20.0",
-    "dtool-s3",
+    "dtool-s3>=0.15.0",
     "dservercore>0.18.0",
     "flask-smorest",
     "marshmallow",

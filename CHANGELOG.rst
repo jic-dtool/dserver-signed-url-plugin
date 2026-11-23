@@ -77,8 +77,8 @@ Dependencies
 ~~~~~~~~~~~~
 
 - Requires Python 3.10 or later
-- Requires ``dtoolcore>=3.18.0`` with ``freeze_with_manifest`` support
+- Requires ``dtoolcore>=3.20.0`` (``freeze_with_manifest``, ``DtoolCoreFrozenDataSetError``)
 - Requires ``dservercore>0.18.0``
-- Requires ``dtool-s3`` for S3/MinIO backends
+- Requires ``dtool-s3>=0.15.0`` (signed URL support) for S3/MinIO backends
 - Optional ``dtool-azure`` for Azure backends
 - Built with ``hatchling`` and ``hatch-vcs``; the version is derived from git tags
