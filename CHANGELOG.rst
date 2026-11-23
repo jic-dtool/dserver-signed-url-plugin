@@ -18,15 +18,6 @@ Changed
   server-side write (e.g. ``AccessDenied`` because the server's storage
   credentials lack write permission), instead of a generic ``500``
 
-Fixed
-~~~~~
-
-- Concurrent ``upload-complete`` requests for the same dataset: if another
-  request freezes the dataset after this one loaded it, dtoolcore raises
-  ``DtoolCoreFrozenDataSetError``; this is now treated as "already frozen" and registration
-  proceeds instead of returning ``500``. Removing the pending upload record
-  also tolerates it having been removed by the concurrent request
-
 
 v0.1.0 (2025-12-08)
 -------------------
@@ -45,6 +36,11 @@ Added
   - Creates proto-dataset (``type: protodataset``) on upload initiation
   - Freezes to dataset (``type: dataset``) on upload completion
   - Validates README and all manifest items exist before freezing
+  - Concurrent ``upload-complete`` requests for the same dataset: if
+    another request freezes the dataset after this one loaded it
+    (dtoolcore raises ``DtoolCoreFrozenDataSetError``), the dataset is
+    treated as already frozen and registered. Removing the pending
+    upload record tolerates the concurrent request having removed it
 
 - Database persistence for pending uploads:
 
