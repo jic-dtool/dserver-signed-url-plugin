@@ -45,7 +45,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install \
           "dservercore @ git+https://github.com/jic-dtool/dservercore.git@main" \
-          "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@master" \
+          "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@main" \
           "dserver-search-plugin-mongo @ git+https://github.com/jic-dtool/dserver-search-plugin-mongo.git@main" \
           "dserver-retrieve-plugin-mongo @ git+https://github.com/jic-dtool/dserver-retrieve-plugin-mongo.git@main"
         pip install -e ".[test]" flake8
@@ -117,7 +117,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install \
           "dservercore @ git+https://github.com/jic-dtool/dservercore.git@main" \
-          "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@master" \
+          "dtool-s3 @ git+https://github.com/jic-dtool/dtool-s3.git@main" \
           "dserver-search-plugin-mongo @ git+https://github.com/jic-dtool/dserver-search-plugin-mongo.git@main" \
           "dserver-retrieve-plugin-mongo @ git+https://github.com/jic-dtool/dserver-retrieve-plugin-mongo.git@main"
         pip install -e ".[test]"
