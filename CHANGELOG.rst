@@ -66,3 +66,4 @@ Dependencies
 - Requires ``dservercore>0.18.0``
 - Requires ``dtool-s3`` for S3/MinIO backends
 - Optional ``dtool-azure`` for Azure backends
+- Built with ``hatchling`` and ``hatch-vcs``; the version is derived from git tags
