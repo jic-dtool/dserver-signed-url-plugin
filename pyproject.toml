@@ -31,7 +31,7 @@ azure = [
 ]
 
 [project.urls]
-Repository = "https://github.com/livMatS/dserver-signed-url-plugin"
+Repository = "https://github.com/jic-dtool/dserver-signed-url-plugin"
 
 [project.entry-points."dservercore.extension"]
 SignedURLExtension = "dserver_signed_url_plugin:SignedURLExtension"
