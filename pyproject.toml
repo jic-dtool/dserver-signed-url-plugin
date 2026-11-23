@@ -13,7 +13,7 @@ authors = [
 dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
-    "dtoolcore>=3.18.0",
+    "dtoolcore>=3.20.0",
     "dtool-s3",
     "dservercore>0.18.0",
     "flask-smorest",
