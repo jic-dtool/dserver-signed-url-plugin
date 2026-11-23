@@ -38,6 +38,11 @@ Added
   - Creates proto-dataset (``type: protodataset``) on upload initiation
   - Freezes to dataset (``type: dataset``) on upload completion
   - Validates README and all manifest items exist before freezing
+  - Concurrent ``upload-complete`` requests for the same dataset: if
+    another request freezes the dataset after this one loaded it
+    (dtoolcore raises ``DtoolCoreFrozenDataSetError``), the dataset is
+    treated as already frozen and registered. Removing the pending
+    upload record tolerates the concurrent request having removed it
 
 - Database persistence for pending uploads:
 

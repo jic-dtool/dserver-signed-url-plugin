@@ -684,6 +684,13 @@ def signal_upload_complete(request_data):
                 f"The server's storage credentials may lack write permission "
                 f"for this base URI. Please contact an administrator."
             ))
+        except dtoolcore.DtoolCoreFrozenDataSetError:
+            # A concurrent upload-complete request froze the dataset after
+            # this request loaded it. Proceed with registration, as when
+            # loading finds an already frozen dataset.
+            logger.info(
+                f"Dataset {uri} was frozen by a concurrent request, "
+                "proceeding with registration")
         except Exception as e:
             logger.error(f"Failed to freeze proto-dataset {uri}: {e}")
             abort(500, description=f"Failed to freeze dataset: {e}")
@@ -709,8 +716,10 @@ def signal_upload_complete(request_data):
         logger.error(f"Failed to register dataset {uri}: {e}")
         abort(500, description=f"Failed to register dataset: {e}")
 
-    # Clean up pending upload record from database
-    sql_db.session.delete(pending_upload)
+    # Clean up pending upload record from database. A concurrent request
+    # may already have removed it, so delete by query: deleting the loaded
+    # object would warn that it expected to delete a row and matched none.
+    PendingUpload.query.filter_by(uuid=dataset_uuid).delete()
     sql_db.session.commit()
 
     logger.info(f"Successfully registered dataset from upload: {uri}")
