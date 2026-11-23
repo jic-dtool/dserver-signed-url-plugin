@@ -20,9 +20,12 @@ import click
 import dtoolcore
 import dtoolcore.utils
 
+from botocore.exceptions import ClientError
+
 from flask import abort, current_app, jsonify
 from flask.cli import AppGroup
 from flask_smorest import Blueprint
+from flask_smorest import abort as smorest_abort
 
 from dservercore import ExtensionABC, sql_db
 from dservercore.utils import (
@@ -192,32 +195,16 @@ def _rewrite_url(url):
     if not rewrite_config:
         return url
 
-    # Parse the rewrite config - format is "internal:external"
-    # where both can be full URLs like "http://minio:9000" or just "minio:9000"
-    parts = rewrite_config.split(':', 1)
-    if len(parts) != 2:
-        logger.warning(f"Invalid SIGNED_URL_HOST_REWRITE format: {rewrite_config}")
+    # Format is "internal|external", e.g.
+    # "http://minio:9000|http://localhost:9000"
+    internal, sep, external = rewrite_config.partition('|')
+    if not sep or not internal or not external:
+        logger.warning(
+            f"Invalid SIGNED_URL_HOST_REWRITE format: {rewrite_config!r} "
+            f"(expected 'internal|external', e.g. "
+            f"'http://minio:9000|http://localhost:9000')"
+        )
         return url
-
-    # Handle both "http://minio:9000" -> "http://localhost:9000" format
-    # and simpler cases
-    internal = parts[0]
-    external = parts[1]
-
-    # For URL-style config like "http://minio:9000:http://localhost:9000",
-    # we need to be smarter about parsing
-    if '://' in rewrite_config:
-        # Split on "://" boundaries - find the second protocol marker
-        idx = rewrite_config.find('://', rewrite_config.find('://') + 3)
-        if idx > 0:
-            # There's a second protocol - split there minus one for the colon separator
-            # Format: http://minio:9000:http://localhost:9000
-            # Find where "http" starts after the first URL
-            for i, char in enumerate(rewrite_config):
-                if i > 0 and rewrite_config[i-1] == ':' and rewrite_config[i:i+4] in ('http', 'HTTP'):
-                    internal = rewrite_config[:i-1]
-                    external = rewrite_config[i:]
-                    break
 
     return url.replace(internal, external, 1)
 
@@ -315,8 +302,8 @@ def get_dataset_signed_urls(uri):
     urls = _rewrite_urls_dict(urls)
 
     expiry_timestamp = (
-        datetime.utcnow() + timedelta(seconds=expiry_seconds)
-    ).isoformat() + "Z"
+        datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)
+    ).isoformat()
 
     return {
         'uri': uri,
@@ -381,8 +368,8 @@ def get_item_signed_url(uri, identifier):
     url = _rewrite_url(url)
 
     expiry_timestamp = (
-        datetime.utcnow() + timedelta(seconds=expiry_seconds)
-    ).isoformat() + "Z"
+        datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)
+    ).isoformat()
 
     return {
         'uri': uri,
@@ -406,6 +393,10 @@ def get_upload_signed_urls(request_data, base_uri):
 
     After uploading README and items, the client should call the upload-complete
     endpoint to freeze the dataset and trigger registration.
+
+    Repeating the request for an unfinished upload of the same UUID to the
+    same base URI resumes it: the pending upload record is refreshed and a
+    fresh set of signed URLs is returned.
     """
     username = get_jwt_identity()
     base_uri = unquote(base_uri)
@@ -422,9 +413,26 @@ def get_upload_signed_urls(request_data, base_uri):
     name = request_data['name']
     creator_username = request_data['creator_username']
     frozen_at = request_data['frozen_at']
+    hash_function = request_data.get('hash_function', 'md5sum_hexdigest')
     items = request_data.get('items', [])
     tags = request_data.get('tags', [])
     annotations = request_data.get('annotations', {})
+    overlays = request_data.get('overlays', {})
+
+    # Item hashes are pinned into the signed upload URLs as Content-MD5 and
+    # verified by the storage backend, which requires MD5 hashes
+    if hash_function != 'md5sum_hexdigest':
+        abort(400, description=(
+            f"Unsupported hash function '{hash_function}'; "
+            f"only 'md5sum_hexdigest' is supported"
+        ))
+
+    if not dtoolcore.utils.name_is_valid(name):
+        abort(400, description=(
+            f"Invalid dataset name '{name}'. Names may be up to 80 "
+            f"characters long and contain only alphanumeric characters "
+            f"and the special characters - _ ."
+        ))
 
     # Generate dataset URI
     dataset_uri = f"{base_uri}/{dataset_uuid}"
@@ -432,6 +440,15 @@ def get_upload_signed_urls(request_data, base_uri):
     # Check if dataset already exists
     if dataset_uri_exists(dataset_uri):
         abort(409, description=f"Dataset {dataset_uuid} already exists at {base_uri}")
+
+    # An unfinished upload of the same UUID to the same location may be
+    # resumed; the same UUID pending at a different location is a conflict.
+    pending_upload = PendingUpload.query.filter_by(uuid=dataset_uuid).first()
+    if pending_upload is not None and pending_upload.uri != dataset_uri:
+        abort(409, description=(
+            f"A pending upload with UUID {dataset_uuid} already exists "
+            f"at a different location"
+        ))
 
     expiry_seconds = Config.SIGNED_URL_WRITE_EXPIRY_SECONDS
 
@@ -450,33 +467,44 @@ def get_upload_signed_urls(request_data, base_uri):
 
         manifest = {
             "dtoolcore_version": dtoolcore.__version__,
-            "hash_function": "md5sum_hexdigest",
+            "hash_function": hash_function,
             "items": manifest_items,
         }
 
-        # Create a proto-dataset (not frozen yet)
-        # This allows us to detect incomplete uploads
-        logger.debug(f"Creating proto-dataset {dataset_uri}")
+        proto_dataset = None
+        if pending_upload is not None:
+            # Resume an interrupted upload: reuse the existing proto-dataset
+            try:
+                proto_dataset = dtoolcore.ProtoDataSet.from_uri(dataset_uri)
+                logger.info(f"Resuming pending upload for {dataset_uri}")
+            except Exception:
+                logger.warning(
+                    f"Pending upload record exists for {dataset_uri} but the "
+                    f"proto-dataset could not be loaded; recreating it"
+                )
 
-        # Build admin metadata with the client-provided UUID
-        admin_metadata = {
-            "uuid": dataset_uuid,
-            "dtoolcore_version": dtoolcore.__version__,
-            "name": name,
-            "type": "protodataset",
-            "creator_username": creator_username,
-            "created_at": dtoolcore.utils.timestamp(
-                datetime.now(timezone.utc)
-            ),
-        }
+        if proto_dataset is None:
+            # Create a proto-dataset (not frozen yet)
+            # This allows us to detect incomplete uploads
+            logger.debug(f"Creating proto-dataset {dataset_uri}")
 
-        # Create proto-dataset with custom admin metadata
-        proto_dataset = dtoolcore.generate_proto_dataset(
-            admin_metadata=admin_metadata,
-            base_uri=base_uri,
-        )
-        proto_dataset.create()
-        proto_dataset.put_readme("")  # Empty README, will be uploaded
+            # Build admin metadata with the client-provided UUID
+            admin_metadata = {
+                "uuid": dataset_uuid,
+                "dtoolcore_version": dtoolcore.__version__,
+                "name": name,
+                "type": "protodataset",
+                "creator_username": creator_username,
+                "created_at": datetime.now(timezone.utc).timestamp(),
+            }
+
+            # Create proto-dataset with custom admin metadata
+            proto_dataset = dtoolcore.generate_proto_dataset(
+                admin_metadata=admin_metadata,
+                base_uri=base_uri,
+            )
+            proto_dataset.create()
+            proto_dataset.put_readme("")  # Empty README, will be uploaded
 
         # Add tags to proto-dataset
         if tags:
@@ -488,17 +516,30 @@ def get_upload_signed_urls(request_data, base_uri):
             for ann_name, ann_value in annotations.items():
                 proto_dataset.put_annotation(ann_name, ann_value)
 
+        # Write overlays directly to storage; they are plain JSON objects
+        # and do not interfere with freezing
+        if overlays:
+            for overlay_name, overlay in overlays.items():
+                proto_dataset._storage_broker.put_overlay(overlay_name, overlay)
+
         # Store pending upload in database for use when freezing
-        pending_upload = PendingUpload(
-            uuid=dataset_uuid,
-            uri=proto_dataset.uri,
-            base_uri=base_uri,
-            name=name,
-            creator_username=creator_username,
-            frozen_at=frozen_at,
-            manifest=manifest,
-        )
-        sql_db.session.add(pending_upload)
+        if pending_upload is None:
+            pending_upload = PendingUpload(
+                uuid=dataset_uuid,
+                uri=proto_dataset.uri,
+                base_uri=base_uri,
+                name=name,
+                creator_username=creator_username,
+                frozen_at=frozen_at,
+                manifest=manifest,
+            )
+            sql_db.session.add(pending_upload)
+        else:
+            pending_upload.name = name
+            pending_upload.creator_username = creator_username
+            pending_upload.frozen_at = frozen_at
+            pending_upload.manifest = manifest
+            pending_upload.created_at = datetime.now(timezone.utc)
         sql_db.session.commit()
 
         # Get storage broker from the created proto-dataset to generate signed URLs
@@ -511,15 +552,25 @@ def get_upload_signed_urls(request_data, base_uri):
             'items': {}
         }
 
-        # Generate URLs for each item
+        # Generate URLs for each item. Where the storage broker supports it,
+        # the item's object metadata and Content-MD5 are pinned into the
+        # signature, so the storage backend itself rejects uploads whose
+        # content does not match the claimed hash.
         for item in items:
             relpath = item['relpath']
             identifier = dtoolcore.utils.generate_identifier(relpath)
-            item_key = storage_broker.data_key_prefix + identifier
+            if hasattr(storage_broker, 'generate_signed_item_write_url'):
+                url, headers = storage_broker.generate_signed_item_write_url(
+                    relpath, item['hash'], expiry_seconds)
+            else:
+                item_key = storage_broker.data_key_prefix + identifier
+                url = storage_broker.generate_signed_write_url(
+                    item_key, expiry_seconds)
+                headers = {}
             upload_urls['items'][identifier] = {
-                'url': storage_broker.generate_signed_write_url(
-                    item_key, expiry_seconds),
-                'relpath': relpath
+                'url': url,
+                'relpath': relpath,
+                'headers': headers,
             }
 
     except dtoolcore.DtoolCoreInvalidNameError as e:
@@ -528,6 +579,16 @@ def get_upload_signed_urls(request_data, base_uri):
     except dtoolcore.DtoolCoreValueError as e:
         logger.warning(f"Invalid value in upload request for {dataset_uri}: {e}")
         abort(400, description=str(e))
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        logger.error(
+            f"Storage backend rejected upload request for {dataset_uri}: {e}"
+        )
+        smorest_abort(502, message=(
+            f"The storage backend rejected the request ({error_code}). "
+            f"The server's storage credentials may lack write permission "
+            f"for this base URI. Please contact an administrator."
+        ))
     except Exception as e:
         logger.error(f"Failed to process upload request for {dataset_uri}: {e}")
         abort(500, description=f"Failed to process upload request: {e}")
@@ -581,6 +642,18 @@ def signal_upload_complete(request_data):
         logger.warning(f"No pending upload found for {uri}")
         abort(400, description="No pending upload found for this dataset")
 
+    # The pending upload must have been initiated for this exact URI;
+    # otherwise a user with register permission elsewhere could hijack or
+    # discard someone else's pending upload
+    if pending_upload.uri != uri:
+        logger.warning(
+            f"Upload-complete URI mismatch: request for {uri}, but pending "
+            f"upload {dataset_uuid} is registered for {pending_upload.uri}"
+        )
+        abort(409, description=(
+            "Pending upload for this UUID was initiated for a different URI"
+        ))
+
     manifest = pending_upload.manifest
     frozen_at = pending_upload.frozen_at
 
@@ -603,6 +676,14 @@ def signal_upload_complete(request_data):
         try:
             proto_dataset.freeze_with_manifest(manifest, frozen_at=frozen_at)
             logger.debug(f"Froze proto-dataset {uri}")
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"Storage backend rejected freeze of {uri}: {e}")
+            smorest_abort(502, message=(
+                f"The storage backend rejected the request ({error_code}). "
+                f"The server's storage credentials may lack write permission "
+                f"for this base URI. Please contact an administrator."
+            ))
         except Exception as e:
             logger.error(f"Failed to freeze proto-dataset {uri}: {e}")
             abort(500, description=f"Failed to freeze dataset: {e}")

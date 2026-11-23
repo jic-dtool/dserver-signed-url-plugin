@@ -45,15 +45,18 @@ class UploadRequestSchema(Schema):
     name = fields.Str(required=True, metadata={"description": "Dataset name"})
     creator_username = fields.Str(required=True, metadata={"description": "Username of the dataset creator"})
     frozen_at = fields.Float(required=True, metadata={"description": "UTC timestamp when dataset was frozen"})
+    hash_function = fields.Str(load_default="md5sum_hexdigest", metadata={"description": "Name of the hash function used for item hashes"})
     items = fields.List(fields.Nested(UploadItemSchema), metadata={"description": "List of items with full metadata"})
     tags = fields.List(fields.Str(), load_default=[], metadata={"description": "List of tags"})
     annotations = fields.Dict(keys=fields.Str(), values=fields.Raw(), load_default={}, metadata={"description": "Annotations as key-value pairs"})
+    overlays = fields.Dict(keys=fields.Str(), values=fields.Dict(keys=fields.Str(), values=fields.Raw()), load_default={}, metadata={"description": "Overlays as overlay name to item identifier/value mapping"})
 
 
 class UploadItemURLSchema(Schema):
     """Schema for an item upload URL."""
     url = fields.Str(required=True, metadata={"description": "Signed URL for uploading the item"})
     relpath = fields.Str(required=True, metadata={"description": "Relative path of the item"})
+    headers = fields.Dict(keys=fields.Str(), values=fields.Str(), load_default={}, metadata={"description": "Headers that must be sent verbatim with the PUT request"})
 
 
 class UploadURLsSchema(Schema):
