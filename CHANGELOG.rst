@@ -13,6 +13,8 @@ Unreleased
 Changed
 ~~~~~~~
 
+- Requires ``dtoolcore>=3.20.0`` (previously ``>=3.18.0``), the first release
+  with ``ProtoDataSet.freeze_with_manifest``, which upload-complete uses
 - Upload initiation and upload completion now return ``502 Bad Gateway``
   with an explanatory message when the storage backend rejects a
   server-side write (e.g. ``AccessDenied`` because the server's storage
