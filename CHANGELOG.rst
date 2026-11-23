@@ -18,6 +18,16 @@ Changed
   server-side write (e.g. ``AccessDenied`` because the server's storage
   credentials lack write permission), instead of a generic ``500``
 
+Fixed
+~~~~~
+
+- Concurrent ``upload-complete`` requests for the same dataset: if another
+  request freezes the dataset after this one loaded it, dtoolcore raises
+  ``DtoolCoreFrozenDataSetError`` (from dtoolcore versions that guard against
+  re-freezing); this is now treated as "already frozen" and registration
+  proceeds instead of returning ``500``. Removing the pending upload record
+  also tolerates it having been removed by the concurrent request
+
 
 v0.1.0 (2025-12-08)
 -------------------
