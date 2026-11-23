@@ -10,13 +10,6 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 Unreleased
 ----------
 
-Added
-~~~~~
-
-- End-to-end tests against a real S3 server (SeaweedFS in CI): signed
-  upload URLs, upload-complete with dtool-s3, registration in dserver and
-  signed read URLs. Run with ``DSERVER_S3_INTEGRATION_TESTS=1``
-
 Changed
 ~~~~~~~
 
@@ -65,6 +58,9 @@ Added
 - Support for S3-compatible storage (via dtool-s3)
 - Support for Azure Blob Storage (via dtool-azure)
 - Comprehensive API documentation in README.rst
+- End-to-end tests against a real S3 server (SeaweedFS in CI): signed
+  upload URLs, upload-complete with dtool-s3, registration in dserver and
+  signed read URLs. Run with ``DSERVER_S3_INTEGRATION_TESTS=1``
 
 Dependencies
 ~~~~~~~~~~~~
