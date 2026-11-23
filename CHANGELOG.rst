@@ -10,14 +10,6 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 Unreleased
 ----------
 
-Changed
-~~~~~~~
-
-- Upload initiation and upload completion now return ``502 Bad Gateway``
-  with an explanatory message when the storage backend rejects a
-  server-side write (e.g. ``AccessDenied`` because the server's storage
-  credentials lack write permission), instead of a generic ``500``
-
 
 v0.1.0 (2025-12-08)
 -------------------
@@ -31,6 +23,10 @@ Added
 - Signed URL generation for individual items (``GET /signed-urls/item/<uri>/<identifier>``)
 - Signed URL generation for uploading new datasets (``POST /signed-urls/upload/<base_uri>``)
 - Upload completion endpoint (``POST /signed-urls/upload-complete``)
+- Upload initiation and upload completion return ``502 Bad Gateway``
+  with an explanatory message when the storage backend rejects a
+  server-side write (e.g. ``AccessDenied`` because the server's storage
+  credentials lack write permission)
 - Proto-dataset workflow for uploads:
 
   - Creates proto-dataset (``type: protodataset``) on upload initiation
