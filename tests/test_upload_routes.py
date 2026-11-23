@@ -330,23 +330,3 @@ class TestUploadComplete:
             headers=auth_header(grumpy_token))
         assert response.status_code == 200
         assert PendingUpload.query.filter_by(uuid=UUID).count() == 0
-
-    def test_other_freeze_errors_still_fail_with_older_dtoolcore(
-            self, client, grumpy_token, complete_env, monkeypatch, caplog):
-        """Released dtoolcore versions lack DtoolCoreFrozenDataSetError; the
-        handler must not fail with AttributeError there."""
-        monkeypatch.delattr(dtoolcore, "DtoolCoreFrozenDataSetError")
-
-        def broken_freeze(manifest, frozen_at=None):
-            raise RuntimeError("boom")
-
-        complete_env["proto"].freeze_with_manifest = broken_freeze
-        self.add_pending()
-        response = client.post(
-            self.ROUTE, json={"uri": DATASET_URI},
-            headers=auth_header(grumpy_token))
-        assert response.status_code == 500
-        # Handled by the generic freeze error branch, not an AttributeError.
-        assert "Failed to freeze proto-dataset" in caplog.text
-        assert "boom" in caplog.text
-        assert PendingUpload.query.filter_by(uuid=UUID).count() == 1

@@ -23,8 +23,7 @@ Fixed
 
 - Concurrent ``upload-complete`` requests for the same dataset: if another
   request freezes the dataset after this one loaded it, dtoolcore raises
-  ``DtoolCoreFrozenDataSetError`` (from dtoolcore versions that guard against
-  re-freezing); this is now treated as "already frozen" and registration
+  ``DtoolCoreFrozenDataSetError``; this is now treated as "already frozen" and registration
   proceeds instead of returning ``500``. Removing the pending upload record
   also tolerates it having been removed by the concurrent request
 

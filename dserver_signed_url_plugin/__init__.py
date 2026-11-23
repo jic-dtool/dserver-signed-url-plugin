@@ -176,17 +176,6 @@ def delete_pending_upload(uuid, delete_storage):
     click.secho(f"\nDeleted pending upload record from database.", fg="green")
 
 
-def _already_frozen_errors():
-    """Return the exception types signalling an already frozen dataset.
-
-    ``DtoolCoreFrozenDataSetError`` is raised by ``freeze_with_manifest`` when
-    another request froze the dataset in the meantime. Released dtoolcore
-    versions do not define it; an empty tuple then matches nothing.
-    """
-    error = getattr(dtoolcore, "DtoolCoreFrozenDataSetError", None)
-    return (error,) if error is not None else ()
-
-
 def _extract_base_uri(uri):
     """Extract base URI from dataset URI."""
     return uri.rsplit("/", 1)[0]
@@ -695,7 +684,7 @@ def signal_upload_complete(request_data):
                 f"The server's storage credentials may lack write permission "
                 f"for this base URI. Please contact an administrator."
             ))
-        except _already_frozen_errors():
+        except dtoolcore.DtoolCoreFrozenDataSetError:
             # A concurrent upload-complete request froze the dataset after
             # this request loaded it. Proceed with registration, as when
             # loading finds an already frozen dataset.
